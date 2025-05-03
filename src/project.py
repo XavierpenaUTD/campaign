@@ -20,6 +20,16 @@ pickup_message = ""
 pickup_timer = 0
 
 last_direction = None
+switch_activated = False
+puzzle_solved = False
+victory = False
+
+treasure_box_walls = [
+    pygame.Rect(375, 255, 50, 20),  # Top
+    pygame.Rect(375, 325, 50, 20),  # Bottom
+    pygame.Rect(355, 275, 20, 50),  # Left
+    pygame.Rect(425, 275, 20, 50),  # Right
+]
 
 rooms = {
     "Start": {
@@ -60,26 +70,25 @@ rooms = {
         "color": (50, 30, 80)
     },
     "Treasure Room": {
-        "neighbors": {"left": "Obstacle Room"},
+        "neighbors": {"left": "Obstacle Room", "down": "Switch Room"},
         "locked": False,
         "walls": [],
         "minimap_pos": (3, 0),
         "color": (90, 90, 20)
     },
     "Switch Room": {
-        "neighbors": {"up": "Treasure Room", "left": "Puzzle Room"},
+        "neighbors": {"up": "Treasure Room"},
         "locked": False,
         "walls": [],
-        "switch_puzzle": True,
-        "door_locked": True,
+        "switch_rect": pygame.Rect(350, 250, 50, 50),
         "minimap_pos": (2, 2),
-        "color": (60, 90, 60),
-        "switch_area": pygame.Rect(350, 250, 100, 100)
+        "color": (60, 90, 60)
     },
     "Puzzle Room": {
-        "neighbors": {"up": "Start", "right": "Switch Room"},
+        "neighbors": {"up": "Start"},
         "locked": False,
         "walls": [],
+        "puzzle_unsolved": True,
         "minimap_pos": (1, 2),
         "color": (90, 60, 40)
     }
@@ -119,22 +128,28 @@ def draw_room():
     for wall in rooms[current_room]["walls"]:
         pygame.draw.rect(screen, (130, 130, 130), wall)
 
-    if rooms[current_room].get("switch_puzzle") and rooms[current_room]["door_locked"]:
-        pygame.draw.rect(screen, (200, 50, 50), pygame.Rect(0, 0, 800, 20))
+    if current_room == "Treasure Room":
+        if not switch_activated:
+            for wall in treasure_box_walls:
+                pygame.draw.rect(screen, (200, 50, 50), wall)
+        pygame.draw.rect(screen, (255, 215, 0), pygame.Rect(375, 275, 50, 50))  # Treasure Chest
+
+    if current_room == "Switch Room":
+        color = (0, 200, 0) if switch_activated else (200, 0, 0)
+        pygame.draw.rect(screen, color, rooms["Switch Room"]["switch_rect"])
+
+    if current_room == "Puzzle Room" and rooms["Puzzle Room"]["puzzle_unsolved"]:
+        hint = font.render("Press E to solve the puzzle and open Switch Room.", True, (255, 255, 0))
+        screen.blit(hint, (SCREEN_WIDTH//2 - hint.get_width()//2, 20))
 
     if "key_rect" in rooms[current_room] and rooms[current_room].get("key") not in player_inventory:
         pygame.draw.rect(screen, (255, 215, 0), rooms[current_room]["key_rect"])
 
     pygame.draw.rect(screen, (0, 200, 0), (*player_pos, player_size, player_size))
 
-    screen.blit(font.render(f"Room: {current_room}", True, (220, 220, 220)), (20, 10))
-    neighbors = rooms[current_room].get("neighbors", {})
-    screen.blit(font.render(f"Neighbors: {list(neighbors.keys())}", True, (180, 180, 180)), (20, 40))
-    screen.blit(font.render(f"Inventory: {player_inventory}", True, (140, 220, 140)), (20, 70))
-
-    if pickup_message:
-        msg = font.render(pickup_message, True, (255, 255, 0))
-        screen.blit(msg, (SCREEN_WIDTH//2 - msg.get_width()//2, SCREEN_HEIGHT//2))
+    if victory:
+        win_text = big_font.render("YOU WIN!", True, (255, 255, 0))
+        screen.blit(win_text, (SCREEN_WIDTH//2 - win_text.get_width()//2, SCREEN_HEIGHT//2))
 
     draw_minimap()
 
@@ -151,13 +166,6 @@ def try_move_room(direction):
     neighbors = rooms[current_room].get("neighbors", {})
     if direction in neighbors:
         next_room = neighbors[direction]
-        if rooms[next_room].get("locked"):
-            if rooms[next_room]["key_required"] in player_inventory:
-                rooms[next_room]["locked"] = False
-            else:
-                return
-        if current_room == "Switch Room" and direction == "up" and rooms[current_room]["door_locked"]:
-            return
         current_room = next_room
         reset_player_pos(direction)
 
@@ -169,24 +177,27 @@ def reset_player_pos(direction):
 
 def move_player(dx, dy):
     new_rect = pygame.Rect(player_pos[0] + dx, player_pos[1] + dy, player_size, player_size)
+
+    # Block treasure chest box if not activated
+    if current_room == "Treasure Room" and not switch_activated:
+        for wall in treasure_box_walls:
+            if new_rect.colliderect(wall):
+                return
+
     for wall in rooms[current_room]["walls"]:
         if new_rect.colliderect(wall):
             return
+
     player_pos[0] += dx
     player_pos[1] += dy
 
 def main():
-    global game_started, menu_selection, pickup_message, pickup_timer, last_direction
+    global game_started, menu_selection, pickup_message, pickup_timer, last_direction, switch_activated, victory
     clock = pygame.time.Clock()
     running = True
 
     while running:
         clock.tick(60)
-
-        if pickup_timer > 0:
-            pickup_timer -= 1
-        else:
-            pickup_message = ""
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -215,15 +226,25 @@ def main():
         if player_pos[1] < 0: last_direction = "up"; try_move_room("up")
         if player_pos[1] + player_size > SCREEN_HEIGHT: last_direction = "down"; try_move_room("down")
 
+        if keys[pygame.K_e]:
+            if current_room == "Puzzle Room" and rooms["Puzzle Room"]["puzzle_unsolved"]:
+                rooms["Puzzle Room"]["puzzle_unsolved"] = False
+                rooms["Puzzle Room"]["neighbors"]["right"] = "Switch Room"
+                pickup_message = "Puzzle Solved! Path opened."
+
+            if current_room == "Switch Room" and not switch_activated:
+                switch_activated = True
+                pickup_message = "Switch Activated! Treasure Door Open."
+
         if "key_rect" in rooms[current_room] and rooms[current_room].get("key") not in player_inventory:
             if pygame.Rect(player_pos[0], player_pos[1], player_size, player_size).colliderect(rooms[current_room]["key_rect"]):
                 player_inventory.append(rooms[current_room]["key"])
                 pickup_message = f"Picked up {rooms[current_room]['key']}!"
-                pickup_timer = 120
 
-        if rooms[current_room].get("switch_puzzle") and rooms[current_room]["door_locked"]:
-            if rooms[current_room]["switch_area"].colliderect(pygame.Rect(player_pos[0], player_pos[1], player_size, player_size)):
-                rooms[current_room]["door_locked"] = False
+        if current_room == "Treasure Room" and switch_activated:
+            if pygame.Rect(player_pos[0], player_pos[1], player_size, player_size).colliderect(pygame.Rect(375, 275, 50, 50)):
+                if not victory:
+                    victory = True
 
         draw_room()
         pygame.display.flip()
