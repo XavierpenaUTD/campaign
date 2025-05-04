@@ -1,5 +1,4 @@
 import pygame
-import os
 import random
 
 pygame.init()
@@ -12,11 +11,14 @@ player_size = 30
 player_pos = [SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2]
 player_speed = 5
 player_inventory = []
-
 game_started = False
 victory = False
 switch_activated = False
 particles = []
+
+# Puzzle Room push block setup
+puzzle_block = pygame.Rect(300, 400, 50, 50)
+puzzle_target = pygame.Rect(600, 300, 50, 50)
 
 treasure_box_walls = [
     pygame.Rect(375, 255, 50, 20),
@@ -77,7 +79,7 @@ rooms = {
     "Puzzle Room": {
         "neighbors": {"up": "Start"},
         "walls": [pygame.Rect(200, 200, 100, 100), pygame.Rect(500, 300, 100, 100)],
-        "puzzle_unsolved": True,
+        "puzzle_solved": False,
         "minimap_pos": (1, 2),
         "color": (90, 60, 40)
     }
@@ -88,30 +90,34 @@ font = pygame.font.SysFont(None, 24)
 big_font = pygame.font.SysFont(None, 72)
 
 def reset_game():
-    global current_room, player_pos, player_inventory, switch_activated, victory, particles
+    global current_room, player_pos, player_inventory, switch_activated, victory, particles, puzzle_block
     current_room = "Start"
     player_pos = [SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2]
     player_inventory = []
     switch_activated = False
     victory = False
     particles = []
-    rooms["Puzzle Room"]["puzzle_unsolved"] = True
+    rooms["Puzzle Room"]["puzzle_solved"] = False
     rooms["Puzzle Room"]["neighbors"] = {"up": "Start"}
+    puzzle_block.x, puzzle_block.y = 300, 400
+
+def generate_exit_walls():
+    walls = []
+    neighbors = rooms[current_room].get("neighbors", {})
+    if "up" not in neighbors:
+        walls.append(pygame.Rect(0, 0, SCREEN_WIDTH, 5))
+    if "down" not in neighbors:
+        walls.append(pygame.Rect(0, SCREEN_HEIGHT - 5, SCREEN_WIDTH, 5))
+    if "left" not in neighbors:
+        walls.append(pygame.Rect(0, 0, 5, SCREEN_HEIGHT))
+    if "right" not in neighbors:
+        walls.append(pygame.Rect(SCREEN_WIDTH - 5, 0, 5, SCREEN_HEIGHT))
+    return walls
 
 def draw_room():
     screen.fill(rooms[current_room]["color"])
 
-    neighbors = rooms[current_room].get("neighbors", {})
-    if "up" not in neighbors:
-        pygame.draw.rect(screen, (100, 100, 100), (0, 0, SCREEN_WIDTH, 5))
-    if "down" not in neighbors:
-        pygame.draw.rect(screen, (100, 100, 100), (0, SCREEN_HEIGHT - 5, SCREEN_WIDTH, 5))
-    if "left" not in neighbors:
-        pygame.draw.rect(screen, (100, 100, 100), (0, 0, 5, SCREEN_HEIGHT))
-    if "right" not in neighbors:
-        pygame.draw.rect(screen, (100, 100, 100), (SCREEN_WIDTH - 5, 0, 5, SCREEN_HEIGHT))
-
-    for wall in rooms[current_room]["walls"]:
+    for wall in rooms[current_room]["walls"] + generate_exit_walls():
         pygame.draw.rect(screen, (130, 130, 130), wall)
 
     if current_room == "Treasure Room":
@@ -124,9 +130,12 @@ def draw_room():
         color = (0, 200, 0) if switch_activated else (200, 0, 0)
         pygame.draw.rect(screen, color, rooms["Switch Room"]["switch_rect"])
 
-    if current_room == "Puzzle Room" and rooms["Puzzle Room"]["puzzle_unsolved"]:
-        hint = font.render("Press E to solve the puzzle and open Switch Room.", True, (255, 255, 0))
-        screen.blit(hint, (SCREEN_WIDTH//2 - hint.get_width()//2, 20))
+    if current_room == "Puzzle Room":
+        pygame.draw.rect(screen, (150, 150, 0), puzzle_target)
+        pygame.draw.rect(screen, (100, 100, 255), puzzle_block)
+        if not rooms["Puzzle Room"]["puzzle_solved"]:
+            hint = font.render("Push the block onto the target!", True, (255, 255, 0))
+            screen.blit(hint, (SCREEN_WIDTH//2 - hint.get_width()//2, 20))
 
     if "key_rect" in rooms[current_room] and rooms[current_room].get("key") not in player_inventory:
         pygame.draw.rect(screen, (255, 215, 0), rooms[current_room]["key_rect"])
@@ -139,7 +148,6 @@ def draw_room():
     if victory:
         win_text = big_font.render("YOU WIN!", True, (255, 255, 0))
         screen.blit(win_text, (SCREEN_WIDTH//2 - win_text.get_width()//2, 100))
-
         play_text = font.render("Press [R] to Play Again or [Q] to Quit", True, (255, 255, 255))
         screen.blit(play_text, (SCREEN_WIDTH//2 - play_text.get_width()//2, 200))
 
@@ -168,7 +176,7 @@ def reset_player_pos(direction):
 def move_player(dx, dy):
     new_rect = pygame.Rect(player_pos[0] + dx, player_pos[1] + dy, player_size, player_size)
 
-    for wall in rooms[current_room]["walls"]:
+    for wall in rooms[current_room]["walls"] + generate_exit_walls():
         if new_rect.colliderect(wall):
             return
 
@@ -176,6 +184,11 @@ def move_player(dx, dy):
         for wall in treasure_box_walls:
             if new_rect.colliderect(wall):
                 return
+
+    if current_room == "Puzzle Room":
+        if new_rect.colliderect(puzzle_block):
+            puzzle_block.x += dx
+            puzzle_block.y += dy
 
     player_pos[0] += dx
     player_pos[1] += dy
@@ -209,7 +222,6 @@ def main():
             prompt = font.render("Press ENTER to Start", True, (200, 200, 200))
             screen.blit(prompt, (SCREEN_WIDTH//2 - prompt.get_width()//2, 300))
             pygame.display.flip()
-
             if keys[pygame.K_RETURN]:
                 game_started = True
             continue
@@ -231,13 +243,6 @@ def main():
         if player_pos[1] < 0: try_move_room("up")
         if player_pos[1] + player_size > SCREEN_HEIGHT: try_move_room("down")
 
-        if keys[pygame.K_e]:
-            if current_room == "Puzzle Room" and rooms["Puzzle Room"]["puzzle_unsolved"]:
-                rooms["Puzzle Room"]["puzzle_unsolved"] = False
-                rooms["Puzzle Room"]["neighbors"]["right"] = "Switch Room"
-            if current_room == "Switch Room" and not switch_activated:
-                switch_activated = True
-
         if "key_rect" in rooms[current_room] and rooms[current_room].get("key") not in player_inventory:
             if pygame.Rect(player_pos[0], player_pos[1], player_size, player_size).colliderect(rooms[current_room]["key_rect"]):
                 player_inventory.append(rooms[current_room]["key"])
@@ -247,6 +252,11 @@ def main():
                 if not victory:
                     victory = True
                     spawn_particles(400, 300)
+
+        if current_room == "Puzzle Room" and not rooms["Puzzle Room"]["puzzle_solved"]:
+            if puzzle_block.colliderect(puzzle_target):
+                rooms["Puzzle Room"]["puzzle_solved"] = True
+                rooms["Puzzle Room"]["neighbors"]["right"] = "Switch Room"
 
         for p in particles:
             p["pos"][0] += p["vel"][0]
