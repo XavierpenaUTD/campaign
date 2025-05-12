@@ -209,7 +209,7 @@ def main():
                     done = False
             if done:
                 treasure_box_opening = False
-                treasure_box_walls.clear()  # <-- remove walls fully now!
+                treasure_box_walls.clear()  
 
         if current_room == "Treasure Room" and switch_activated:
             if pygame.Rect(player_pos[0], player_pos[1], player_size, player_size).colliderect(pygame.Rect(375, 275, 50, 50)):

@@ -1,7 +1,7 @@
 # Campaign: The Puzzle Quest
 
 ## Demo
-Demo Video: <URL>
+Demo Video: https://youtu.be/hiZwhtd89R4
 
 ## GitHub Repository
 GitHub Repo: (https://github.com/XavierpenaUTD/campaign)
